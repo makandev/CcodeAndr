@@ -1,41 +1,57 @@
 # CcodeAndr
 
-Hilfsdateien, um Claude Code **ohne** den CCR-Proxy (Claude Code Router) zu starten.
+Zwei Claude-Desktop-Fenster (normales Konto + Proxy-/anderes Konto)
+**gleichzeitig** öffnen und dazwischen wechseln.
 
-## Warum startet Claude immer „mit Proxy"?
+## Das eigentliche Problem (wichtig!)
 
-Beim Einrichten setzt `ccr` dauerhafte Windows-Umgebungsvariablen
-(`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, …), die auf den lokalen Proxy
-(`127.0.0.1:3456`) zeigen. Weil diese **dauerhaft** gespeichert sind, benutzt
-sogar ein normal gestartetes `claude` weiter den Proxy – deshalb siehst du dort
-„ganz andere Chats". Ein `ccr stop` allein reicht nicht, weil die Variablen
-gesetzt bleiben.
+Es ging nie um Proxy-Variablen. Bei der **Claude-Desktop-App** gilt:
 
-## Dateien
+1. **Welche Chats du siehst, hängt am eingeloggten Konto/Profil** – nicht an
+   `HTTP_PROXY` / `ANTHROPIC_BASE_URL`. Diese Variablen zu löschen ändert an den
+   angezeigten Chats **nichts**.
+2. Die App hat eine **„nur-eine-Instanz"-Sperre**: Ist sie schon offen, holt
+   jeder neue Start nur das **bestehende** Fenster nach vorne (gleiches Konto).
 
-### 1. `start-claude-noproxy.bat`  (empfohlen)
-Doppelklick → startet das normale Claude Code ohne Proxy.
-- stoppt `ccr`, falls es läuft
-- leert die Proxy-Variablen **nur für dieses Fenster** (deine dauerhaften
-  Windows-Einstellungen bleiben unverändert)
-- startet `claude`
+→ Lösung: Jedes Fenster bekommt ein **eigenes Profil** (`--user-data-dir`).
+Getrennte Profile = getrennte Logins = beide Fenster dürfen gleichzeitig laufen.
 
-So kannst du bei Bedarf später trotzdem noch `ccr` benutzen.
+## So richtest du es ein (einmalig)
 
-### 2. `remove-proxy-env-permanent.bat`  (optional, endgültig)
-Nur nutzen, wenn **auch** ein normal gestartetes `claude` nie mehr über den
-Proxy laufen soll. Entfernt die dauerhaften CCR-Variablen aus Windows.
-- fragt vorher nach (J/N)
-- danach **einmal ab-/anmelden oder PC neu starten**
-- CCR müsste bei späterer Nutzung einmal neu konfiguriert werden
+1. **Alle Claude-Fenster schließen** (Task-Manager prüfen: kein `Claude.exe` mehr).
+2. `Claude-Normal.bat` doppelklicken → im neuen Fenster mit deinem **normalen
+   Konto** einloggen. Das ist ab jetzt dein Normal-Fenster.
+3. `Claude-Proxy.bat` doppelklicken → mit deinem **Proxy-/anderen Konto**
+   einloggen. Das ist ab jetzt dein Proxy-Fenster.
 
-## Falls es danach immer noch über den Proxy geht
+Ab dann: einfach die passende `.bat` doppelklicken. Für Desktop-Icons die
+`.bat` rechtsklicken → „Senden an → Desktop (Verknüpfung erstellen)".
 
-Dann steckt die Proxy-Einstellung zusätzlich in der Claude-Konfiguration.
-Prüfe die Datei `%USERPROFILE%\.claude\settings.json` und entferne dort einen
-`env`-Block mit `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`, falls vorhanden.
+## Dateien für die zwei Fenster
 
-## Autostart abschalten (falls `ccr` beim Hochfahren startet)
+- **`Claude-Normal.bat`** – Fenster mit deinem normalen Konto (Profil
+  `%USERPROFILE%\claude-profil-normal`).
+- **`Claude-Proxy.bat`** – Fenster mit dem Proxy-/anderen Konto (Profil
+  `%USERPROFILE%\claude-profil-proxy`).
+- **`Claude-Beide-oeffnen.bat`** – öffnet beide Fenster auf einmal; wechseln
+  mit `Alt+Tab`.
 
-`Win + R` → `shell:startup` → dort einen evtl. vorhandenen CCR-Starteintrag
-löschen. Zusätzlich im Task-Manager unter „Autostart" prüfen.
+## Falls sich das zweite Fenster NICHT öffnet
+
+Manche App-Versionen erlauben trotz getrennter Profile nur eine Instanz. Dann:
+zuerst **alle** Claude-Fenster schließen, dann die gewünschte `.bat` starten –
+so hast du immer das richtige Konto vorne. Für echten Parallelbetrieb kann man
+alternativ die eigenständige (Nicht-Store-)Claude-Desktop-App aus
+`Claude Setup.exe` installieren, die `--user-data-dir` zuverlässiger annimmt.
+
+---
+
+## Diagnose-/Hilfsdateien (aus der Fehlersuche)
+
+- `diagnose-proxy.bat` – zeigt an, wo überall Proxy-/CCR-Einstellungen stecken.
+- `find-claude-apps.bat` – findet alle Claude-`.exe` und Verknüpfungen.
+- `show-normal-schalter.bat` – zeigt den Inhalt des Ordners „Claude Normal Schalter".
+- `reset-to-normal-gui.bat` – entfernt den CCR-Proxy aus der **Claude-Code**-
+  `settings.json` (betrifft nur Claude Code / CLI, nicht die Desktop-App).
+- `start-claude-noproxy.bat`, `remove-proxy-env-permanent.bat`,
+  `reset-settings.ps1` – ältere Helfer rund um Claude Code ohne Proxy.

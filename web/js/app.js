@@ -71,14 +71,21 @@ function updateModelUI() {
   // Key-Feld nur zeigen, wenn wirklich ein Key gebraucht wird
   const verifyNeedsKey = verifyOn && state.visionModel.startsWith("gemini");
   $("geminiKeyField").hidden = !(im.needsKey || verifyNeedsKey);
+  // Pollinations-Key-Feld nur bei Pollinations-Bildmodell (optional)
+  $("polliKeyField").hidden = im.provider !== "pollinations";
 }
 updateModelUI();
 
-// ---------- Gemini-Key merken ----------
+// ---------- Keys merken (nur lokal im Browser) ----------
 const savedKey = localStorage.getItem("geminiKey");
 if (savedKey) $("geminiKey").value = savedKey;
 $("geminiKey").addEventListener("change", (e) =>
   localStorage.setItem("geminiKey", e.target.value.trim()));
+
+const savedPolli = localStorage.getItem("polliKey");
+if (savedPolli) $("polliKey").value = savedPolli;
+$("polliKey").addEventListener("change", (e) =>
+  localStorage.setItem("polliKey", e.target.value.trim()));
 
 // ---------- Status-Helfer ----------
 function setStatus(msg, isErr = false) {
@@ -204,7 +211,7 @@ $("generateBtn").addEventListener("click", async () => {
         : `Generiere Bild (${model.label}) …`);
       img = model.provider === "gemini"
         ? await generateGemini(p, key, model.model)
-        : await generatePollinations(p, { enhance: !strongPrompt, model: model.model });
+        : await generatePollinations(p, { enhance: !strongPrompt, model: model.model, token: $("polliKey").value.trim() });
 
       // 3) Gegenprüfung
       if (!wantVerify || !analysis.elements.length) break;

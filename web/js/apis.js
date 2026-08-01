@@ -21,12 +21,13 @@ function loadImage(src) {
  * kein zusätzlicher (potenziell hängender) Client-Aufruf nötig.
  * Doku: https://pollinations.ai
  */
-export async function generatePollinations(prompt, { enhance = false, model = "flux" } = {}) {
+export async function generatePollinations(prompt, { enhance = false, model = "flux", token = "" } = {}) {
   const seed = Math.floor(Math.random() * 1e9);
   const enc = encodeURIComponent(prompt);
   const url = `https://image.pollinations.ai/prompt/${enc}` +
     `?width=512&height=512&nologo=true&seed=${seed}&model=${encodeURIComponent(model)}` +
-    (enhance ? "&enhance=true" : "");
+    (enhance ? "&enhance=true" : "") +
+    (token ? `&token=${encodeURIComponent(token)}` : "");
   return loadImage(url);
 }
 

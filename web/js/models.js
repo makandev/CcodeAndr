@@ -39,24 +39,34 @@ export const IMAGE_MODELS = [
 // ---- Text-/Vision-Modelle (Prompt-Analyse & Gegenprüfung) ----
 export const VISION_MODELS = [
   {
-    id: "pollinations",
-    label: "Pollinations",
-    badge: "gratis · unbegrenzt",
-    info: "Kostenlose Prüfung & Übersetzung, kein Key, kein Kontingent. Etwas weniger genau als Gemini – ideal, wenn du das Gemini-Kontingent schonen willst.",
-  },
-  {
     id: "gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
-    badge: "Key · genau",
-    info: "Sehr genaue Bildprüfung & Übersetzung. Braucht Gemini-Key und verbraucht Gemini-Kontingent.",
+    badge: "Key · empfohlen",
+    info: "Genaue Bildprüfung & Übersetzung. Nutzt das Gemini-TEXT-Kontingent – das ist GETRENNT vom (kleinen) Bild-Kontingent und meist ausreichend. Braucht Gemini-Key.",
   },
   {
     id: "gemini-2.0-flash",
     label: "Gemini 2.0 Flash",
     badge: "Key · schneller",
-    info: "Etwas schneller/günstiger, minimal geringere Genauigkeit. Verbraucht Gemini-Kontingent.",
+    info: "Etwas schneller/günstiger, minimal geringere Genauigkeit. Nutzt Gemini-Text-Kontingent.",
+  },
+  {
+    id: "pollinations",
+    label: "Pollinations",
+    badge: "⚠️ jetzt kostenpflichtig",
+    info: "Die Pollinations-Text-API ist inzwischen kostenpflichtig (Fehler 402). Nur nutzen, wenn du dort ein bezahltes Konto hast.",
   },
 ];
+
+// Freundliche Beschreibung von Pollinations-Fehlern.
+export function describePollinationsError(status, body) {
+  const short = String(body || "").replace(/\s+/g, " ").trim().slice(0, 150);
+  if (status === 402) {
+    return "Pollinations-Text-API ist kostenpflichtig (402). Für die Prüfung bitte ein Gemini-Modell wählen (Text-Kontingent ist getrennt vom Bild-Kontingent).";
+  }
+  if (status === 429) return "Pollinations überlastet/limitiert (429). Kurz warten und erneut.";
+  return `Pollinations ${status}: ${short}`;
+}
 
 // Freundliche Klartext-Beschreibung von Gemini-Fehlern (v.a. Kontingent 429).
 export function describeGeminiError(status, body) {

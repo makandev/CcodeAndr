@@ -6,7 +6,7 @@
 // WICHTIG: Fehler werden NICHT verschluckt, sondern als Klartext zurückgegeben,
 // damit man die echte Ursache sieht (z.B. "Gemini 400: API key not valid").
 
-import { describeGeminiError } from "./models.js";
+import { describeGeminiError, describePollinationsError } from "./models.js";
 
 // Für Text/Vision der Reihe nach probierte Modelle (falls eines nicht verfügbar ist).
 const TEXT_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
@@ -114,17 +114,18 @@ async function askPollinations(textPrompt, imageDataUrl) {
   } catch (e) {
     throw new Error(`Pollinations Netzwerk/Timeout (${e.name || "Fehler"})`);
   }
-  if (!res.ok) throw new Error(`Pollinations ${res.status}: ${shorten(await res.text().catch(() => ""))}`);
+  if (!res.ok) throw new Error(describePollinationsError(res.status, await res.text().catch(() => "")));
   const data = await res.json();
   return data?.choices?.[0]?.message?.content || "";
 }
 
 async function ask(textPrompt, imageDataUrl, key, model) {
-  // "pollinations" gewählt -> immer gratis prüfen (schont Gemini-Kontingent).
-  // Gemini-Modell gewählt + Key vorhanden -> Gemini. Sonst gratis Pollinations.
-  const useGemini = key && model && model.startsWith("gemini");
-  return useGemini ? askGemini(textPrompt, imageDataUrl, key, model)
-                   : askPollinations(textPrompt, imageDataUrl);
+  const wantsGemini = model && model.startsWith("gemini");
+  if (wantsGemini) {
+    if (!key) throw new Error("Für die Prüfung ist ein Gemini-Key nötig – oben eintragen oder Prüfung ausschalten.");
+    return askGemini(textPrompt, imageDataUrl, key, model);
+  }
+  return askPollinations(textPrompt, imageDataUrl); // nur wenn Pollinations-Prüfmodell gewählt
 }
 
 // -------- öffentliche Funktionen --------

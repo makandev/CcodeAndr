@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sticker Studio – KI Sticker & GIF Generator</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">🎨 Sticker Studio</div>
+    <div class="subtitle">KI-Sticker &amp; bewegte GIFs – powered by Pollinations &amp; Gemini</div>
+  </header>
+
+  <main class="layout">
+    <!-- ===== Linke Spalte: Steuerung ===== -->
+    <section class="panel controls">
+      <h2>1. Beschreibung</h2>
+      <label class="field">
+        <span>Was soll auf dem Sticker sein?</span>
+        <textarea id="prompt" rows="3" placeholder="z.B. ein lachender Hund mit Sonnenbrille"></textarea>
+      </label>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="enhance" checked />
+          Prompt automatisch verbessern &amp; übersetzen (empfohlen)
+        </label>
+        <small>Übersetzt ins Englische und schmückt den Prompt aus – so gehen Details wie „mit Herz" nicht verloren. Gratis, auch ohne Gemini-Key.</small>
+      </div>
+
+      <h2>2. Bild-Modell</h2>
+      <label class="field">
+        <select id="imageModel"><!-- gefüllt per JS --></select>
+      </label>
+      <small id="imageModelInfo" class="modelinfo"></small>
+
+      <label class="field" id="geminiKeyField" hidden>
+        <span>Google AI Studio API-Key</span>
+        <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off" />
+        <small>Wird nur lokal in deinem Browser gespeichert. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Key holen →</a></small>
+      </label>
+
+      <label class="field" id="polliKeyField" hidden>
+        <span>Pollinations API-Key (optional)</span>
+        <input type="password" id="polliKey" placeholder="sk_..." autocomplete="off" />
+        <small>Optional – hebt die Limits der Bild-Generierung. Nur lokal im Browser gespeichert, nie im Code.</small>
+      </label>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="removeBg" />
+          Hintergrund entfernen (Sticker-Look)
+        </label>
+      </div>
+
+      <h2>3. Animation</h2>
+      <div class="anim-grid" id="animGrid"><!-- gefüllt per JS --></div>
+
+      <div class="row two">
+        <label class="field small">
+          <span>Frames</span>
+          <input type="number" id="frames" value="18" min="6" max="40" />
+        </label>
+        <label class="field small">
+          <span>Tempo (ms/Frame)</span>
+          <input type="number" id="delay" value="70" min="30" max="200" step="10" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="verify" checked />
+          Ergebnis prüfen &amp; bei fehlenden Details neu versuchen
+        </label>
+        <div class="row two" style="margin-top:8px">
+          <label class="field small">
+            <span>Prüf-Modell (Vision)</span>
+            <select id="verifyModel"><!-- gefüllt per JS --></select>
+          </label>
+          <label class="field small">
+            <span>Max. Versuche</span>
+            <input type="number" id="maxTries" value="4" min="1" max="8" />
+          </label>
+        </div>
+        <small id="verifyModelInfo" class="modelinfo"></small>
+      </div>
+
+      <button id="generateBtn" class="primary">✨ Sticker generieren</button>
+      <p id="status" class="status"></p>
+    </section>
+
+    <!-- ===== Rechte Spalte: Vorschau ===== -->
+    <section class="panel preview">
+      <h2>Vorschau</h2>
+      <div class="stage">
+        <div class="checkerboard">
+          <canvas id="stage" width="512" height="512"></canvas>
+        </div>
+      </div>
+
+      <div id="verdict" class="verdict" hidden></div>
+
+      <div class="exports">
+        <button id="downloadGif" class="ghost" disabled>⬇️ GIF speichern</button>
+        <button id="downloadWebp" class="ghost" disabled>⬇️ WebP (Standbild)</button>
+      </div>
+      <p class="hint">GIF = überall teilbar. Für animierte <b>WhatsApp-Sticker</b> (WebP, &lt;500&nbsp;KB) kommt der Export in der Android-Phase.</p>
+    </section>
+  </main>
+
+  <!-- gif.js für die GIF-Kodierung (lokal, kein CDN) -->
+  <script src="js/vendor/gif.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

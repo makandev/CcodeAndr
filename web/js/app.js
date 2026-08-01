@@ -73,25 +73,32 @@ function clearVerdict() {
   box.innerHTML = "";
 }
 
-function renderVerdict(elements, verdict) {
+// verify = { results:[...] } | { error:"..." } | null
+function renderVerdict(elements, verify, diag) {
   const box = $("verdict");
   if (!elements.length) { clearVerdict(); return; }
+  const diagHtml = diag
+    ? `<div class="diag">🔧 Diagnose: ${escapeHtml(diag)}</div>` : "";
 
-  if (!verdict) {
-    // Elemente bekannt, aber Prüfung war nicht möglich (z.B. kein Key + Dienst offline)
+  // Prüfung nicht möglich -> echten Grund zeigen
+  if (!verify || verify.error) {
     box.hidden = false;
     box.className = "verdict";
+    const reason = verify?.error ? escapeHtml(verify.error) : "kein Prüf-Provider";
     box.innerHTML =
       `<div class="head">Automatische Prüfung nicht verfügbar</div>` +
-      `<div>Gewünscht: ${elements.map((e) => escapeHtml(e)).join(", ")}.<br>` +
-      `Tipp: Gemini-Key eintragen, dann prüft die App automatisch.</div>`;
+      `<div>Gewünscht: ${elements.map((e) => escapeHtml(e)).join(", ")}.</div>` +
+      `<div class="diag">🔧 Grund: ${reason}</div>` +
+      `<div style="margin-top:6px">Tipp: gültigen Gemini-Key eintragen – dann prüft die App automatisch und versucht bei fehlenden Details neu.</div>` +
+      diagHtml;
     return;
   }
 
-  const allOk = verdict.every((v) => v.present);
+  const results = verify.results;
+  const allOk = results.every((v) => v.present);
   box.hidden = false;
   box.className = "verdict " + (allOk ? "allok" : "partial");
-  const items = verdict.map((v) =>
+  const items = results.map((v) =>
     `<li class="${v.present ? "ok" : "miss"}">${v.present ? "✅" : "❌"} ${escapeHtml(v.element)}` +
     `${v.present ? "" : " — fehlt"}</li>`
   ).join("");
@@ -101,7 +108,7 @@ function renderVerdict(elements, verdict) {
   const tail = allOk ? "" :
     `<div style="margin-top:8px">Nochmal „generieren" klicken für einen neuen Versuch, ` +
     `oder Beschreibung genauer formulieren.</div>`;
-  box.innerHTML = `<div class="head">${head}</div><ul>${items}</ul>${tail}`;
+  box.innerHTML = `<div class="head">${head}</div><ul>${items}</ul>${tail}${diagHtml}`;
 }
 
 function escapeHtml(s) {
@@ -128,36 +135,43 @@ $("generateBtn").addEventListener("click", async () => {
     const wantVerify = $("verify").checked;
     const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 5, 3) : 1;
 
-    // 1) Wunsch in Elemente + starken Bild-Prompt zerlegen
+    // 1) Wunsch in Elemente + starken englischen Bild-Prompt zerlegen
     setStatus("Analysiere deinen Wunsch …");
     const analysis = wantEnhance
       ? await analyzePrompt(prompt, key)
-      : { elements: [], imagePrompt: prompt };
+      : { elements: [], imagePrompt: prompt, source: "off", warning: "" };
+
+    // Diagnose sammeln (wird unten sichtbar gemacht)
+    let diag = "";
+    if (analysis.source === "fallback" && analysis.warning) {
+      diag = `Prompt-Analyse fiel auf einfache Zerlegung zurück (${analysis.warning})`;
+    }
+
+    // Nur wenn ein ECHTER englischer KI-Prompt vorliegt, Pollinations nicht
+    // umschreiben lassen. Im Fallback (deutscher Rohtext) MUSS enhance=true den
+    // Prompt serverseitig übersetzen – sonst geht z.B. „Herz“ verloren.
+    const strongPrompt = analysis.source === "ai";
 
     // 2) Generier-/Prüf-Schleife
-    let img = null, verdict = null;
+    let img = null, verify = null;
     for (let attempt = 1; attempt <= maxTries; attempt++) {
-      // Fehlende Elemente aus dem letzten Versuch nochmal betonen
-      const missing = verdict ? verdict.filter((v) => !v.present).map((v) => v.element) : [];
+      const missing = verify?.results ? verify.results.filter((v) => !v.present).map((v) => v.element) : [];
       let p = analysis.imagePrompt;
       if (missing.length) p += `. IMPORTANT: the ${missing.join(" and ")} MUST be clearly visible`;
 
       setStatus(maxTries > 1
         ? `Generiere Bild (Versuch ${attempt}/${maxTries}) …`
         : `Generiere Bild via ${state.api} …`);
-      // Wir haben bereits einen expliziten, starken Prompt gebaut ->
-      // Pollinations NICHT zusätzlich umschreiben lassen (enhance: false).
-      const fallbackEnhance = wantEnhance && analysis.elements.length === 0;
       img = state.api === "gemini"
         ? await generateGemini(p, key)
-        : await generatePollinations(p, { enhance: fallbackEnhance });
+        : await generatePollinations(p, { enhance: !strongPrompt });
 
       // 3) Gegenprüfung
       if (!wantVerify || !analysis.elements.length) break;
       setStatus(`Prüfe Ergebnis (Versuch ${attempt}/${maxTries}) …`);
-      verdict = await verifyImage(img, analysis.elements, key);
-      if (!verdict) break;                        // Prüfung nicht möglich -> akzeptieren
-      if (verdict.every((v) => v.present)) break; // alles da -> fertig
+      verify = await verifyImage(img, analysis.elements, key);
+      if (verify.error) break;                              // Prüfung nicht möglich
+      if (verify.results.every((v) => v.present)) break;    // alles da -> fertig
     }
 
     // 4) Optional: Hintergrund entfernen
@@ -168,7 +182,7 @@ $("generateBtn").addEventListener("click", async () => {
 
     state.baseImage = img;
     refreshPreview();
-    renderVerdict(analysis.elements, verdict);
+    renderVerdict(analysis.elements, verify, diag);
     $("downloadWebp").disabled = false;
 
     // 5) GIF im Hintergrund rendern

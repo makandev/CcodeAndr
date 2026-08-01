@@ -1,8 +1,9 @@
 // ================= App-Steuerung =================
 import {
-  generatePollinations, generateGemini, enhancePrompt, removeBackground,
+  generatePollinations, generateGemini, removeBackground,
 } from "./apis.js";
 import { ANIMATIONS, startPreview, renderGif } from "./animator.js";
+import { analyzePrompt, verifyImage } from "./verifier.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -64,6 +65,50 @@ function clampInt(v, min, max, def) {
   return Math.min(max, Math.max(min, n));
 }
 
+// ---------- Prüf-Ergebnis anzeigen ----------
+function clearVerdict() {
+  const box = $("verdict");
+  box.hidden = true;
+  box.className = "verdict";
+  box.innerHTML = "";
+}
+
+function renderVerdict(elements, verdict) {
+  const box = $("verdict");
+  if (!elements.length) { clearVerdict(); return; }
+
+  if (!verdict) {
+    // Elemente bekannt, aber Prüfung war nicht möglich (z.B. kein Key + Dienst offline)
+    box.hidden = false;
+    box.className = "verdict";
+    box.innerHTML =
+      `<div class="head">Automatische Prüfung nicht verfügbar</div>` +
+      `<div>Gewünscht: ${elements.map((e) => escapeHtml(e)).join(", ")}.<br>` +
+      `Tipp: Gemini-Key eintragen, dann prüft die App automatisch.</div>`;
+    return;
+  }
+
+  const allOk = verdict.every((v) => v.present);
+  box.hidden = false;
+  box.className = "verdict " + (allOk ? "allok" : "partial");
+  const items = verdict.map((v) =>
+    `<li class="${v.present ? "ok" : "miss"}">${v.present ? "✅" : "❌"} ${escapeHtml(v.element)}` +
+    `${v.present ? "" : " — fehlt"}</li>`
+  ).join("");
+  const head = allOk
+    ? "✅ Passt – alle gewünschten Elemente sind drauf"
+    : "⚠️ Nicht alles getroffen";
+  const tail = allOk ? "" :
+    `<div style="margin-top:8px">Nochmal „generieren" klicken für einen neuen Versuch, ` +
+    `oder Beschreibung genauer formulieren.</div>`;
+  box.innerHTML = `<div class="head">${head}</div><ul>${items}</ul>${tail}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 // ---------- Generieren ----------
 $("generateBtn").addEventListener("click", async () => {
   const prompt = $("prompt").value.trim();
@@ -75,26 +120,47 @@ $("generateBtn").addEventListener("click", async () => {
   $("downloadWebp").disabled = true;
   state.gifBlob = null;
 
+  clearVerdict();
+
   try {
     const key = $("geminiKey").value.trim();
     const wantEnhance = $("enhance").checked;
+    const wantVerify = $("verify").checked;
+    const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 5, 3) : 1;
 
-    // 1) Prompt verbessern:
-    //    - mit Gemini-Key: über Gemini (mit Timeout, fällt sonst auf Original zurück)
-    //    - ohne Key: serverseitig über Pollinations (enhance=true, siehe unten)
-    let finalPrompt = prompt;
-    if (wantEnhance && key) {
-      setStatus("Verbessere Prompt mit Gemini …");
-      finalPrompt = await enhancePrompt(prompt, key);
+    // 1) Wunsch in Elemente + starken Bild-Prompt zerlegen
+    setStatus("Analysiere deinen Wunsch …");
+    const analysis = wantEnhance
+      ? await analyzePrompt(prompt, key)
+      : { elements: [], imagePrompt: prompt };
+
+    // 2) Generier-/Prüf-Schleife
+    let img = null, verdict = null;
+    for (let attempt = 1; attempt <= maxTries; attempt++) {
+      // Fehlende Elemente aus dem letzten Versuch nochmal betonen
+      const missing = verdict ? verdict.filter((v) => !v.present).map((v) => v.element) : [];
+      let p = analysis.imagePrompt;
+      if (missing.length) p += `. IMPORTANT: the ${missing.join(" and ")} MUST be clearly visible`;
+
+      setStatus(maxTries > 1
+        ? `Generiere Bild (Versuch ${attempt}/${maxTries}) …`
+        : `Generiere Bild via ${state.api} …`);
+      // Wir haben bereits einen expliziten, starken Prompt gebaut ->
+      // Pollinations NICHT zusätzlich umschreiben lassen (enhance: false).
+      const fallbackEnhance = wantEnhance && analysis.elements.length === 0;
+      img = state.api === "gemini"
+        ? await generateGemini(p, key)
+        : await generatePollinations(p, { enhance: fallbackEnhance });
+
+      // 3) Gegenprüfung
+      if (!wantVerify || !analysis.elements.length) break;
+      setStatus(`Prüfe Ergebnis (Versuch ${attempt}/${maxTries}) …`);
+      verdict = await verifyImage(img, analysis.elements, key);
+      if (!verdict) break;                        // Prüfung nicht möglich -> akzeptieren
+      if (verdict.every((v) => v.present)) break; // alles da -> fertig
     }
 
-    // 2) Bild generieren
-    setStatus(`Generiere Bild via ${state.api} …`);
-    let img = state.api === "gemini"
-      ? await generateGemini(finalPrompt, key)
-      : await generatePollinations(finalPrompt, { enhance: wantEnhance && !key });
-
-    // 3) Optional: Hintergrund entfernen
+    // 4) Optional: Hintergrund entfernen
     if ($("removeBg").checked) {
       setStatus("Entferne Hintergrund (kann etwas dauern) …");
       img = await removeBackground(img);
@@ -102,10 +168,10 @@ $("generateBtn").addEventListener("click", async () => {
 
     state.baseImage = img;
     refreshPreview();
-    setStatus("Fertig! Vorschau läuft. Du kannst jetzt exportieren.");
+    renderVerdict(analysis.elements, verdict);
     $("downloadWebp").disabled = false;
 
-    // 4) GIF im Hintergrund rendern
+    // 5) GIF im Hintergrund rendern
     await buildGif();
   } catch (err) {
     console.error(err);

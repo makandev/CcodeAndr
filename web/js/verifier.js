@@ -6,6 +6,8 @@
 // WICHTIG: Fehler werden NICHT verschluckt, sondern als Klartext zurückgegeben,
 // damit man die echte Ursache sieht (z.B. "Gemini 400: API key not valid").
 
+import { describeGeminiError } from "./models.js";
+
 // Für Text/Vision der Reihe nach probierte Modelle (falls eines nicht verfügbar ist).
 const TEXT_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
 
@@ -92,9 +94,9 @@ async function askGemini(textPrompt, imageDataUrl, key, preferred) {
       return data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
     }
     const body = await res.text().catch(() => "");
-    lastErr = `Gemini ${res.status}: ${shorten(body)}`;
+    lastErr = describeGeminiError(res.status, body);
     if (res.status === 404) continue;          // Modell nicht da -> nächstes probieren
-    throw new Error(lastErr);                    // 400/401/403 -> echter Fehler (meist Key)
+    throw new Error(lastErr);                    // 400/401/403/429 -> echter Fehler
   }
   throw new Error(lastErr || "Gemini nicht erreichbar");
 }
@@ -118,8 +120,11 @@ async function askPollinations(textPrompt, imageDataUrl) {
 }
 
 async function ask(textPrompt, imageDataUrl, key, model) {
-  return key ? askGemini(textPrompt, imageDataUrl, key, model)
-             : askPollinations(textPrompt, imageDataUrl);
+  // "pollinations" gewählt -> immer gratis prüfen (schont Gemini-Kontingent).
+  // Gemini-Modell gewählt + Key vorhanden -> Gemini. Sonst gratis Pollinations.
+  const useGemini = key && model && model.startsWith("gemini");
+  return useGemini ? askGemini(textPrompt, imageDataUrl, key, model)
+                   : askPollinations(textPrompt, imageDataUrl);
 }
 
 // -------- öffentliche Funktionen --------

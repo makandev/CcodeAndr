@@ -68,8 +68,9 @@ function updateModelUI() {
   $("verifyModelInfo").innerHTML = verifyOn
     ? `ℹ️ ${vm.info}`
     : "Prüfung ist aus – Ergebnis wird nicht automatisch kontrolliert.";
-  // Key-Feld zeigen, wenn Bild-Modell einen Key braucht ODER Prüfung an ist
-  $("geminiKeyField").hidden = !(im.needsKey || verifyOn);
+  // Key-Feld nur zeigen, wenn wirklich ein Key gebraucht wird
+  const verifyNeedsKey = verifyOn && state.visionModel.startsWith("gemini");
+  $("geminiKeyField").hidden = !(im.needsKey || verifyNeedsKey);
 }
 updateModelUI();
 
@@ -167,7 +168,7 @@ $("generateBtn").addEventListener("click", async () => {
     const key = $("geminiKey").value.trim();
     const wantEnhance = $("enhance").checked;
     const wantVerify = $("verify").checked;
-    const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 5, 3) : 1;
+    const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 8, 4) : 1;
 
     const model = state.imageModel;
     if (model.needsKey && !key) {

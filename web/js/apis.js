@@ -1,5 +1,6 @@
 // ================= Bild-APIs =================
 // Beide liefern am Ende ein HTMLImageElement (512x512, für Canvas nutzbar).
+import { describeGeminiError } from "./models.js";
 
 /**
  * Lädt eine URL/DataURL in ein <img> mit CORS-Freigabe (damit Canvas nicht "tainted" wird).
@@ -66,9 +67,9 @@ export async function generateGemini(prompt, apiKey, model = "gemini-2.5-flash-i
     }
 
     if (!res.ok) {
-      lastErr = `Gemini-Fehler ${res.status}: ${shorten(await res.text().catch(() => ""))}`;
+      lastErr = describeGeminiError(res.status, await res.text().catch(() => ""));
       if (res.status === 400) continue;  // evtl. responseModalities nicht unterstützt -> Fallback
-      throw new Error(lastErr);           // 401/403/404 -> echter Fehler (Key/Modell)
+      throw new Error(lastErr);           // 401/403/404/429 -> echter Fehler (Key/Modell/Kontingent)
     }
 
     const data = await res.json();

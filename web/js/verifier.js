@@ -64,13 +64,16 @@ function toDataUrl(img) {
 // -------- Provider-Aufrufe (Text + Vision) --------
 // Werfen bei Fehler eine Error mit KLARTEXT-Ursache.
 
-async function askGemini(textPrompt, imageDataUrl, key) {
+async function askGemini(textPrompt, imageDataUrl, key, preferred) {
   const parts = [{ text: textPrompt }];
   if (imageDataUrl) {
     parts.push({ inline_data: { mime_type: "image/png", data: imageDataUrl.split(",")[1] } });
   }
+  const models = preferred
+    ? [preferred, ...TEXT_MODELS.filter((m) => m !== preferred)]
+    : TEXT_MODELS;
   let lastErr = "";
-  for (const model of TEXT_MODELS) {
+  for (const model of models) {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     let res;
@@ -114,8 +117,8 @@ async function askPollinations(textPrompt, imageDataUrl) {
   return data?.choices?.[0]?.message?.content || "";
 }
 
-async function ask(textPrompt, imageDataUrl, key) {
-  return key ? askGemini(textPrompt, imageDataUrl, key)
+async function ask(textPrompt, imageDataUrl, key, model) {
+  return key ? askGemini(textPrompt, imageDataUrl, key, model)
              : askPollinations(textPrompt, imageDataUrl);
 }
 
@@ -126,7 +129,7 @@ async function ask(textPrompt, imageDataUrl, key) {
  * "ai"       = starker englischer Prompt vom Modell (jedes Element erzwungen)
  * "fallback" = Modell nicht verfügbar -> Originaltext (Aufrufer sollte übersetzen lassen)
  */
-export async function analyzePrompt(prompt, key) {
+export async function analyzePrompt(prompt, key, model) {
   const instruction =
     'You turn a sticker idea (any language) into JSON for image generation. Idea: "' + prompt + '". ' +
     "Return ONLY this JSON, nothing else: " +
@@ -137,7 +140,7 @@ export async function analyzePrompt(prompt, key) {
     '{"elements":["butterfly","heart"],"imagePrompt":"a cute cartoon butterfly holding a big red love heart, ' +
     'both clearly visible, die-cut sticker, bold outline, centered, plain white background"}';
   try {
-    const raw = await ask(instruction, null, key);
+    const raw = await ask(instruction, null, key, model);
     const json = extractJson(raw);
     const elements = Array.isArray(json?.elements) ? json.elements.map(String).filter(Boolean) : [];
     const imagePrompt = typeof json?.imagePrompt === "string" ? json.imagePrompt.trim() : "";
@@ -161,7 +164,7 @@ function fallback(prompt, warning) {
  * Prüft, ob jedes Element sichtbar ist.
  * @returns {{results: Array<{element,present}>}|{error: string}}
  */
-export async function verifyImage(img, elements, key) {
+export async function verifyImage(img, elements, key, model) {
   if (!elements?.length) return { error: "keine Elemente zum Prüfen" };
   let dataUrl;
   try { dataUrl = toDataUrl(img); }
@@ -172,7 +175,7 @@ export async function verifyImage(img, elements, key) {
     "Elements: " + elements.join(", ") + ". " +
     'Return ONLY a JSON array like [{"element":"heart","present":true}].';
   try {
-    const raw = await ask(instruction, dataUrl, key);
+    const raw = await ask(instruction, dataUrl, key, model);
     const json = extractJson(raw);
     const arr = Array.isArray(json) ? json : json?.results;
     if (!Array.isArray(arr)) return { error: "unerwartete Prüf-Antwort" };

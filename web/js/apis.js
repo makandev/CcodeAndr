@@ -20,44 +20,73 @@ function loadImage(src) {
  * kein zusätzlicher (potenziell hängender) Client-Aufruf nötig.
  * Doku: https://pollinations.ai
  */
-export async function generatePollinations(prompt, { enhance = false } = {}) {
+export async function generatePollinations(prompt, { enhance = false, model = "flux" } = {}) {
   const seed = Math.floor(Math.random() * 1e9);
   const enc = encodeURIComponent(prompt);
   const url = `https://image.pollinations.ai/prompt/${enc}` +
-    `?width=512&height=512&nologo=true&seed=${seed}&model=flux` +
+    `?width=512&height=512&nologo=true&seed=${seed}&model=${encodeURIComponent(model)}` +
     (enhance ? "&enhance=true" : "");
   return loadImage(url);
 }
 
+function shorten(s, n = 200) {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
 /**
- * Gemini (Google AI Studio) – "Nano Banana" Bildmodell.
+ * Gemini (Google AI Studio) Bildmodell, z.B. "gemini-2.5-flash-image" (Nano Banana).
  * Braucht einen kostenlosen API-Key.
+ *
+ * Wichtig: Bild-Modelle brauchen generationConfig.responseModalities.
+ * Wir versuchen es MIT und (als Fallback) OHNE, und geben bei Ablehnung/kein-Bild
+ * den echten Grund als Klartext zurück (z.B. Safety-Ablehnung bei geschützten Figuren).
  */
-export async function generateGemini(prompt, apiKey) {
+export async function generateGemini(prompt, apiKey, model = "gemini-2.5-flash-image") {
   if (!apiKey) throw new Error("Kein Gemini API-Key hinterlegt");
-  const model = "gemini-2.5-flash-image";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const res = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  }, 45000);
+  const bodies = [
+    { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["IMAGE", "TEXT"] } },
+    { contents: [{ parts: [{ text: prompt }] }] }, // Fallback ohne responseModalities
+  ];
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Gemini-Fehler ${res.status}: ${t.slice(0, 200)}`);
+  let lastErr = "";
+  for (const body of bodies) {
+    let res;
+    try {
+      res = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }, 60000);
+    } catch (e) {
+      lastErr = `Netzwerk/Timeout (${e.name || "Fehler"})`;
+      continue;
+    }
+
+    if (!res.ok) {
+      lastErr = `Gemini-Fehler ${res.status}: ${shorten(await res.text().catch(() => ""))}`;
+      if (res.status === 400) continue;  // evtl. responseModalities nicht unterstützt -> Fallback
+      throw new Error(lastErr);           // 401/403/404 -> echter Fehler (Key/Modell)
+    }
+
+    const data = await res.json();
+    const cand = data?.candidates?.[0];
+    const parts = cand?.content?.parts || [];
+    const inline = parts.map((p) => p.inlineData || p.inline_data).find((d) => d?.data);
+    if (inline?.data) {
+      const mime = inline.mimeType || inline.mime_type || "image/png";
+      return loadImage(`data:${mime};base64,${inline.data}`);
+    }
+    // Kein Bild -> oft Safety-Ablehnung; Text/Grund mitgeben
+    const reason = cand?.finishReason || "";
+    const textOut = parts.map((p) => p.text).filter(Boolean).join(" ");
+    lastErr = `Gemini lieferte kein Bild${reason ? ` (${reason})` : ""}` +
+              (textOut ? `: „${shorten(textOut, 140)}“` : "");
+    // ohne responseModalities kommt evtl. nur Text -> nächster Versuch bringt nichts mehr
   }
-
-  const data = await res.json();
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find((p) => p.inlineData?.data);
-  if (!imgPart) throw new Error("Gemini hat kein Bild zurückgegeben");
-
-  const mime = imgPart.inlineData.mimeType || "image/png";
-  return loadImage(`data:${mime};base64,${imgPart.inlineData.data}`);
+  throw new Error(lastErr || "Gemini Bildgenerierung fehlgeschlagen");
 }
 
 // Anweisung für den "Prompt-Verbesserer": übersetzen + als Sticker ausschmücken,

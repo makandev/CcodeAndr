@@ -4,11 +4,13 @@ import {
 } from "./apis.js";
 import { ANIMATIONS, startPreview, renderGif } from "./animator.js";
 import { analyzePrompt, verifyImage } from "./verifier.js";
+import { IMAGE_MODELS, VISION_MODELS, findImageModel, findVisionModel } from "./models.js";
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  api: "pollinations",
+  imageModel: IMAGE_MODELS[0], // gewähltes Bild-Modell (Objekt)
+  visionModel: VISION_MODELS[0].id,
   anim: "bounce",
   baseImage: null,   // aktuelles KI-Bild (HTMLImageElement)
   gifBlob: null,
@@ -30,14 +32,46 @@ for (const [key, def] of Object.entries(ANIMATIONS)) {
   animGrid.appendChild(b);
 }
 
-// ---------- API-Umschalter ----------
-$("apiSelect").addEventListener("click", (e) => {
-  const btn = e.target.closest(".seg");
-  if (!btn) return;
-  state.api = btn.dataset.api;
-  [...$("apiSelect").children].forEach((c) => c.classList.toggle("active", c === btn));
-  $("geminiKeyField").hidden = state.api !== "gemini";
+// ---------- Bild-Modell-Auswahl ----------
+const imageSel = $("imageModel");
+for (const m of IMAGE_MODELS) {
+  const o = document.createElement("option");
+  o.value = m.id;
+  o.textContent = `${m.label} · ${m.badge}`;
+  imageSel.appendChild(o);
+}
+imageSel.addEventListener("change", () => {
+  state.imageModel = findImageModel(imageSel.value);
+  updateModelUI();
 });
+
+// ---------- Vision-/Prüf-Modell-Auswahl ----------
+const verifySel = $("verifyModel");
+for (const m of VISION_MODELS) {
+  const o = document.createElement("option");
+  o.value = m.id;
+  o.textContent = `${m.label} · ${m.badge}`;
+  verifySel.appendChild(o);
+}
+verifySel.addEventListener("change", () => {
+  state.visionModel = verifySel.value;
+  updateModelUI();
+});
+$("verify").addEventListener("change", updateModelUI);
+
+// Info-Zeilen + Key-Feld je nach Auswahl aktualisieren
+function updateModelUI() {
+  const im = state.imageModel;
+  $("imageModelInfo").innerHTML = `ℹ️ ${im.info}`;
+  const vm = findVisionModel(state.visionModel);
+  const verifyOn = $("verify").checked;
+  $("verifyModelInfo").innerHTML = verifyOn
+    ? `ℹ️ ${vm.info}`
+    : "Prüfung ist aus – Ergebnis wird nicht automatisch kontrolliert.";
+  // Key-Feld zeigen, wenn Bild-Modell einen Key braucht ODER Prüfung an ist
+  $("geminiKeyField").hidden = !(im.needsKey || verifyOn);
+}
+updateModelUI();
 
 // ---------- Gemini-Key merken ----------
 const savedKey = localStorage.getItem("geminiKey");
@@ -135,10 +169,15 @@ $("generateBtn").addEventListener("click", async () => {
     const wantVerify = $("verify").checked;
     const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 5, 3) : 1;
 
+    const model = state.imageModel;
+    if (model.needsKey && !key) {
+      throw new Error(`„${model.label}“ braucht einen Gemini-Key. Bitte oben eintragen oder ein gratis Modell wählen.`);
+    }
+
     // 1) Wunsch in Elemente + starken englischen Bild-Prompt zerlegen
     setStatus("Analysiere deinen Wunsch …");
     const analysis = wantEnhance
-      ? await analyzePrompt(prompt, key)
+      ? await analyzePrompt(prompt, key, state.visionModel)
       : { elements: [], imagePrompt: prompt, source: "off", warning: "" };
 
     // Diagnose sammeln (wird unten sichtbar gemacht)
@@ -160,16 +199,16 @@ $("generateBtn").addEventListener("click", async () => {
       if (missing.length) p += `. IMPORTANT: the ${missing.join(" and ")} MUST be clearly visible`;
 
       setStatus(maxTries > 1
-        ? `Generiere Bild (Versuch ${attempt}/${maxTries}) …`
-        : `Generiere Bild via ${state.api} …`);
-      img = state.api === "gemini"
-        ? await generateGemini(p, key)
-        : await generatePollinations(p, { enhance: !strongPrompt });
+        ? `Generiere Bild (Versuch ${attempt}/${maxTries}, ${model.label}) …`
+        : `Generiere Bild (${model.label}) …`);
+      img = model.provider === "gemini"
+        ? await generateGemini(p, key, model.model)
+        : await generatePollinations(p, { enhance: !strongPrompt, model: model.model });
 
       // 3) Gegenprüfung
       if (!wantVerify || !analysis.elements.length) break;
       setStatus(`Prüfe Ergebnis (Versuch ${attempt}/${maxTries}) …`);
-      verify = await verifyImage(img, analysis.elements, key);
+      verify = await verifyImage(img, analysis.elements, key, state.visionModel);
       if (verify.error) break;                              // Prüfung nicht möglich
       if (verify.results.every((v) => v.present)) break;    // alles da -> fertig
     }

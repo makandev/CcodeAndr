@@ -41,6 +41,19 @@ web/
     app.js            # Steuerung / UI-Logik
 ```
 
+## Modelle (auswählbar in der App)
+
+**Bild-Modelle:**
+| Modell | Key | Stärken |
+|--------|-----|---------|
+| Pollinations · Flux | nein | Gratis, einzelne Motive. Schwach bei „X mit Y", Logos, Figuren. |
+| Pollinations · Turbo | nein | Gratis, sehr schnell, geringere Qualität. |
+| Gemini 2.5 Flash Image („Nano Banana") | ja | Beste Prompt-Treue – auch Kombis, Konzepte, Text. Empfohlen. |
+
+**Prüf-/Vision-Modelle** (für Gegenprüfung & Übersetzung): Gemini 2.5 Flash, Gemini 2.0 Flash.
+
+Neue Modelle lassen sich zentral in `web/js/models.js` ergänzen – UI und Logik ziehen sich alles von dort.
+
 ## Verwendete kostenlose Dienste
 
 | Zweck | Dienst | Key nötig |

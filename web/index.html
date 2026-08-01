@@ -29,12 +29,11 @@
         <small>Übersetzt ins Englische und schmückt den Prompt aus – so gehen Details wie „mit Herz" nicht verloren. Gratis, auch ohne Gemini-Key.</small>
       </div>
 
-      <h2>2. Bild-Quelle (API)</h2>
-      <div class="segmented" id="apiSelect">
-        <button class="seg active" data-api="pollinations">Pollinations (ohne Key)</button>
-        <button class="seg" data-api="gemini">Gemini (Key nötig)</button>
-      </div>
-      <small id="apiHint">Für Kombis wie „X mit Y" trifft <b>Gemini</b> am zuverlässigsten. Pollinations ist gratis, aber schwächer bei mehreren Motiven.</small>
+      <h2>2. Bild-Modell</h2>
+      <label class="field">
+        <select id="imageModel"><!-- gefüllt per JS --></select>
+      </label>
+      <small id="imageModelInfo" class="modelinfo"></small>
 
       <label class="field" id="geminiKeyField" hidden>
         <span>Google AI Studio API-Key</span>
@@ -68,10 +67,17 @@
           <input type="checkbox" id="verify" checked />
           Ergebnis prüfen &amp; bei fehlenden Details neu versuchen
         </label>
-        <label class="field small" style="margin-top:8px">
-          <span>Max. Versuche</span>
-          <input type="number" id="maxTries" value="3" min="1" max="5" />
-        </label>
+        <div class="row two" style="margin-top:8px">
+          <label class="field small">
+            <span>Prüf-Modell (Vision)</span>
+            <select id="verifyModel"><!-- gefüllt per JS --></select>
+          </label>
+          <label class="field small">
+            <span>Max. Versuche</span>
+            <input type="number" id="maxTries" value="3" min="1" max="5" />
+          </label>
+        </div>
+        <small id="verifyModelInfo" class="modelinfo"></small>
       </div>
 
       <button id="generateBtn" class="primary">✨ Sticker generieren</button>

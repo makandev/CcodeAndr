@@ -77,10 +77,13 @@ $("generateBtn").addEventListener("click", async () => {
 
   try {
     const key = $("geminiKey").value.trim();
+    const wantEnhance = $("enhance").checked;
 
-    // 1) Optional: Prompt verbessern
+    // 1) Prompt verbessern:
+    //    - mit Gemini-Key: über Gemini (mit Timeout, fällt sonst auf Original zurück)
+    //    - ohne Key: serverseitig über Pollinations (enhance=true, siehe unten)
     let finalPrompt = prompt;
-    if ($("enhance").checked) {
+    if (wantEnhance && key) {
       setStatus("Verbessere Prompt mit Gemini …");
       finalPrompt = await enhancePrompt(prompt, key);
     }
@@ -89,7 +92,7 @@ $("generateBtn").addEventListener("click", async () => {
     setStatus(`Generiere Bild via ${state.api} …`);
     let img = state.api === "gemini"
       ? await generateGemini(finalPrompt, key)
-      : await generatePollinations(finalPrompt);
+      : await generatePollinations(finalPrompt, { enhance: wantEnhance && !key });
 
     // 3) Optional: Hintergrund entfernen
     if ($("removeBg").checked) {

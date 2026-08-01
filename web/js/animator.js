@@ -94,7 +94,7 @@ export function renderGif(img, animKey, frames, delayMs, onProgress) {
       width: SIZE,
       height: SIZE,
       transparent: (KEY_COLOR.r << 16) | (KEY_COLOR.g << 8) | KEY_COLOR.b,
-      workerScript: "https://cdn.jsdelivr.net/npm/gif.js.optimized@1.0.1/dist/gif.worker.js",
+      workerScript: "js/vendor/gif.worker.js",
     });
 
     const c = document.createElement("canvas");

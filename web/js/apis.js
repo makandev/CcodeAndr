@@ -16,13 +16,16 @@ function loadImage(src) {
 
 /**
  * Pollinations: komplett kostenlos, kein API-Key.
+ * enhance=true lässt Pollinations den Prompt SERVERSEITIG verbessern/übersetzen –
+ * kein zusätzlicher (potenziell hängender) Client-Aufruf nötig.
  * Doku: https://pollinations.ai
  */
-export async function generatePollinations(prompt) {
+export async function generatePollinations(prompt, { enhance = false } = {}) {
   const seed = Math.floor(Math.random() * 1e9);
   const enc = encodeURIComponent(prompt);
   const url = `https://image.pollinations.ai/prompt/${enc}` +
-    `?width=512&height=512&nologo=true&seed=${seed}&model=flux`;
+    `?width=512&height=512&nologo=true&seed=${seed}&model=flux` +
+    (enhance ? "&enhance=true" : "");
   return loadImage(url);
 }
 
@@ -35,13 +38,13 @@ export async function generateGemini(prompt, apiKey) {
   const model = "gemini-2.5-flash-image";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
     }),
-  });
+  }, 45000);
 
   if (!res.ok) {
     const t = await res.text();
@@ -66,45 +69,39 @@ const ENHANCE_INSTRUCTION =
   "flat vector look. Answer with ONLY the prompt, no quotes, no explanation.\n\nIdea: ";
 
 /**
- * Prompt-Verbesserung (übersetzt + Sticker-Stil).
- * Mit Gemini-Key -> Gemini; sonst kostenlos über die Text-API von Pollinations.
+ * fetch mit hartem Timeout – verhindert, dass ein hängender Aufruf die App blockiert.
  */
-export async function enhancePrompt(prompt, apiKey) {
-  return apiKey
-    ? enhanceViaGemini(prompt, apiKey)
-    : enhanceViaPollinations(prompt);
+async function fetchWithTimeout(url, options = {}, ms = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
 }
 
-async function enhanceViaGemini(prompt, apiKey) {
+/**
+ * Prompt-Verbesserung über Gemini (übersetzt + Sticker-Stil).
+ * Nur mit Key; ohne Key wird stattdessen Pollinations' serverseitiges enhance=true genutzt.
+ * Fällt bei jedem Fehler/Timeout still auf den Originaltext zurück.
+ */
+export async function enhancePrompt(prompt, apiKey) {
+  if (!apiKey) return prompt;
   const model = "gemini-2.0-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ parts: [{ text: ENHANCE_INSTRUCTION + prompt }] }] }),
     });
-    if (!res.ok) return enhanceViaPollinations(prompt);
+    if (!res.ok) return prompt;
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return (text || prompt).trim();
   } catch {
-    return enhanceViaPollinations(prompt);
-  }
-}
-
-// Kostenlose Text-API von Pollinations – kein Key nötig.
-async function enhanceViaPollinations(prompt) {
-  try {
-    const url = `https://text.pollinations.ai/${encodeURIComponent(ENHANCE_INSTRUCTION + prompt)}`;
-    const res = await fetch(url);
-    if (!res.ok) return prompt;
-    const text = (await res.text()).trim();
-    // Sicherheitsnetz: unbrauchbare/leere Antwort -> Original + Sticker-Zusatz
-    if (!text || text.length > 400) return `${prompt}, cute sticker, bold outline, white background`;
-    return text;
-  } catch {
-    return `${prompt}, cute sticker, bold outline, white background`;
+    return prompt;
   }
 }
 

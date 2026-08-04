@@ -47,6 +47,56 @@
         <small>Optional – hebt die Limits der Bild-Generierung. Nur lokal im Browser gespeichert, nie im Code.</small>
       </label>
 
+      <details id="aioBox" class="aio">
+        <summary>➕ Neue KI hinzufügen / verwalten</summary>
+        <div class="aio-body">
+          <div id="customList" class="custom-list"><!-- gefüllt per JS --></div>
+
+          <label class="field small">
+            <span>Vorlage</span>
+            <select id="presetSel">
+              <option value="deepseek">DeepSeek (Text)</option>
+              <option value="openrouter">OpenRouter (Text/Vision)</option>
+              <option value="groq">Groq (Text/Vision)</option>
+              <option value="openai">OpenAI GPT-4o mini (Text/Vision)</option>
+              <option value="openai-image">OpenAI DALL·E (Bild)</option>
+              <option value="custom">Eigener Endpoint</option>
+            </select>
+          </label>
+          <small id="presetInfo" class="modelinfo"></small>
+
+          <label class="field small"><span>Name</span>
+            <input type="text" id="mName" placeholder="z.B. DeepSeek" /></label>
+          <div class="row two">
+            <label class="field small"><span>Rolle</span>
+              <select id="mRole">
+                <option value="text">Text &amp; Prüfung</option>
+                <option value="image">Bild-Generierung</option>
+              </select></label>
+            <label class="field small"><span>Protokoll</span>
+              <select id="mProto">
+                <option value="openai-chat">OpenAI-kompatibel (Chat)</option>
+                <option value="openai-image">OpenAI-kompatibel (Bild)</option>
+                <option value="gemini-text">Gemini (Text/Vision)</option>
+                <option value="gemini-image">Gemini (Bild)</option>
+                <option value="pollinations-image">Pollinations (Bild)</option>
+              </select></label>
+          </div>
+          <label class="field small"><span>Basis-URL</span>
+            <input type="text" id="mBase" placeholder="https://api.deepseek.com" /></label>
+          <label class="field small"><span>Modell-ID</span>
+            <input type="text" id="mModel" placeholder="deepseek-chat" /></label>
+          <label class="field small"><span>API-Key</span>
+            <input type="password" id="mKey" placeholder="sk-..." autocomplete="off" /></label>
+          <label class="check" style="margin:6px 0">
+            <input type="checkbox" id="mVision" />
+            Kann Bilder sehen (Vision – nötig für die Prüfung)
+          </label>
+          <button id="addKiBtn" class="ghost" type="button">＋ Hinzufügen</button>
+          <p id="aioMsg" class="status"></p>
+        </div>
+      </details>
+
       <div class="row">
         <label class="check">
           <input type="checkbox" id="removeBg" />

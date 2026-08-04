@@ -1,18 +1,20 @@
 // ================= App-Steuerung =================
-import {
-  generatePollinations, generateGemini, removeBackground,
-} from "./apis.js";
+import { removeBackground } from "./apis.js";
+import { generateImage } from "./providers.js";
 import { ANIMATIONS, startPreview, renderGif } from "./animator.js";
 import { analyzePrompt, verifyImage } from "./verifier.js";
-import { IMAGE_MODELS, VISION_MODELS, findImageModel, findVisionModel } from "./models.js";
+import {
+  getImageModels, getTextModels, findModel, PRESETS,
+  addCustomModel, removeCustomModel, loadCustomModels,
+} from "./models.js";
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  imageModel: IMAGE_MODELS[0], // gewähltes Bild-Modell (Objekt)
-  visionModel: VISION_MODELS[0].id,
+  imageModelId: null,
+  textModelId: null,
   anim: "bounce",
-  baseImage: null,   // aktuelles KI-Bild (HTMLImageElement)
+  baseImage: null,
   gifBlob: null,
   stopPreview: null,
 };
@@ -32,60 +34,127 @@ for (const [key, def] of Object.entries(ANIMATIONS)) {
   animGrid.appendChild(b);
 }
 
-// ---------- Bild-Modell-Auswahl ----------
-const imageSel = $("imageModel");
-for (const m of IMAGE_MODELS) {
-  const o = document.createElement("option");
-  o.value = m.id;
-  o.textContent = `${m.label} · ${m.badge}`;
-  imageSel.appendChild(o);
+// ---------- Modell-Dropdowns (dynamisch, inkl. Custom) ----------
+function fillSelect(sel, models, selectedId) {
+  sel.innerHTML = "";
+  for (const m of models) {
+    const o = document.createElement("option");
+    o.value = m.id;
+    o.textContent = `${m.label}${m.badge ? " · " + m.badge : m.custom ? " · eigene KI" : ""}`;
+    sel.appendChild(o);
+  }
+  if (selectedId && models.some((m) => m.id === selectedId)) sel.value = selectedId;
 }
-imageSel.addEventListener("change", () => {
-  state.imageModel = findImageModel(imageSel.value);
-  updateModelUI();
-});
 
-// ---------- Vision-/Prüf-Modell-Auswahl ----------
-const verifySel = $("verifyModel");
-for (const m of VISION_MODELS) {
-  const o = document.createElement("option");
-  o.value = m.id;
-  o.textContent = `${m.label} · ${m.badge}`;
-  verifySel.appendChild(o);
-}
-verifySel.addEventListener("change", () => {
-  state.visionModel = verifySel.value;
+function refreshModelDropdowns() {
+  const imgs = getImageModels();
+  const texts = getTextModels();
+  if (!imgs.some((m) => m.id === state.imageModelId)) state.imageModelId = imgs[0].id;
+  if (!texts.some((m) => m.id === state.textModelId)) state.textModelId = texts[0].id;
+  fillSelect($("imageModel"), imgs, state.imageModelId);
+  fillSelect($("verifyModel"), texts, state.textModelId);
   updateModelUI();
-});
+}
+
+$("imageModel").addEventListener("change", (e) => { state.imageModelId = e.target.value; updateModelUI(); });
+$("verifyModel").addEventListener("change", (e) => { state.textModelId = e.target.value; updateModelUI(); });
 $("verify").addEventListener("change", updateModelUI);
 
-// Info-Zeilen + Key-Feld je nach Auswahl aktualisieren
 function updateModelUI() {
-  const im = state.imageModel;
-  $("imageModelInfo").innerHTML = `ℹ️ ${im.info}`;
-  const vm = findVisionModel(state.visionModel);
+  const im = findModel(state.imageModelId, "image");
+  const tm = findModel(state.textModelId, "text");
   const verifyOn = $("verify").checked;
-  $("verifyModelInfo").innerHTML = verifyOn
-    ? `ℹ️ ${vm.info}`
+  $("imageModelInfo").innerHTML = `ℹ️ ${im.info || ""}`;
+  $("verifyModelInfo").innerHTML = verifyOn ? `ℹ️ ${tm.info || ""}`
     : "Prüfung ist aus – Ergebnis wird nicht automatisch kontrolliert.";
-  // Key-Feld nur zeigen, wenn wirklich ein Key gebraucht wird
-  const verifyNeedsKey = verifyOn && state.visionModel.startsWith("gemini");
-  $("geminiKeyField").hidden = !(im.needsKey || verifyNeedsKey);
-  // Pollinations-Key-Feld nur bei Pollinations-Bildmodell (optional)
-  $("polliKeyField").hidden = im.provider !== "pollinations";
+  // Gemini-Key-Feld zeigen, wenn ein Gemini-Builtin-Modell aktiv ist (Bild oder Prüfung)
+  const geminiActive = (im.keyKind === "gemini") || (verifyOn && tm.keyKind === "gemini");
+  $("geminiKeyField").hidden = !geminiActive;
+  // Pollinations-Key nur bei Pollinations-Bildmodell
+  $("polliKeyField").hidden = im.protocol !== "pollinations-image";
 }
-updateModelUI();
 
 // ---------- Keys merken (nur lokal im Browser) ----------
-const savedKey = localStorage.getItem("geminiKey");
-if (savedKey) $("geminiKey").value = savedKey;
-$("geminiKey").addEventListener("change", (e) =>
-  localStorage.setItem("geminiKey", e.target.value.trim()));
+function bindKey(id) {
+  const saved = localStorage.getItem(id);
+  if (saved) $(id).value = saved;
+  $(id).addEventListener("change", (e) => localStorage.setItem(id, e.target.value.trim()));
+}
+bindKey("geminiKey");
+bindKey("polliKey");
 
-const savedPolli = localStorage.getItem("polliKey");
-if (savedPolli) $("polliKey").value = savedPolli;
-$("polliKey").addEventListener("change", (e) =>
-  localStorage.setItem("polliKey", e.target.value.trim()));
+// ---------- Modell auflösen (Config + aktuelle Keys) ----------
+function resolveModel(id, role) {
+  const m = { ...findModel(id, role) };
+  if (m.custom) return m; // Custom trägt eigenen apiKey/baseUrl
+  if (m.keyKind === "gemini") m.apiKey = $("geminiKey").value.trim();
+  if (m.keyKind === "pollinations") m.apiKey = $("polliKey").value.trim(); // optional (Token)
+  return m;
+}
+
+// ---------- „Neue KI hinzufügen“ ----------
+function applyPreset() {
+  const p = PRESETS[$("presetSel").value] || PRESETS.custom;
+  $("presetInfo").innerHTML = p.info ? `ℹ️ ${p.info}` : "";
+  $("mName").value = p.label || "";
+  $("mRole").value = p.role;
+  $("mProto").value = p.protocol;
+  $("mBase").value = p.baseUrl || "";
+  $("mModel").value = p.model || "";
+  $("mVision").checked = !!p.vision;
+}
+$("presetSel").addEventListener("change", applyPreset);
+applyPreset();
+
+$("addKiBtn").addEventListener("click", () => {
+  const label = $("mName").value.trim();
+  const model = $("mModel").value.trim();
+  const proto = $("mProto").value;
+  const base = $("mBase").value.trim();
+  const key = $("mKey").value.trim();
+  const role = $("mRole").value;
+  const needsBase = proto === "openai-chat" || proto === "openai-image";
+  const needsKey = proto !== "pollinations-image";
+  if (!label || !model) { aioMsg("Name und Modell-ID sind nötig.", true); return; }
+  if (needsBase && !base) { aioMsg("Basis-URL fehlt (z.B. https://api.deepseek.com).", true); return; }
+  if (needsKey && !key) { aioMsg("API-Key fehlt.", true); return; }
+
+  addCustomModel({
+    label, role, protocol: proto, baseUrl: base, model,
+    apiKey: key, vision: $("mVision").checked,
+    info: `Eigene KI: ${label} (${proto}${$("mVision").checked ? ", Vision" : ""}).`,
+  });
+  $("mName").value = ""; $("mModel").value = ""; $("mKey").value = "";
+  aioMsg(`„${label}“ hinzugefügt und auswählbar.`, false);
+  renderCustomList();
+  refreshModelDropdowns();
+});
+
+function aioMsg(msg, isErr) {
+  const el = $("aioMsg");
+  el.textContent = msg;
+  el.classList.toggle("err", !!isErr);
+}
+
+function renderCustomList() {
+  const list = loadCustomModels();
+  const box = $("customList");
+  if (!list.length) { box.innerHTML = `<small class="modelinfo">Noch keine eigene KI. Vorlage wählen und hinzufügen.</small>`; return; }
+  box.innerHTML = "";
+  for (const m of list) {
+    const div = document.createElement("div");
+    div.className = "custom-item";
+    div.innerHTML = `<span>${escapeHtml(m.label)} · ${escapeHtml(m.role)} · ${escapeHtml(m.model)}</span>`;
+    const del = document.createElement("button");
+    del.textContent = "🗑️"; del.title = "Entfernen";
+    del.onclick = () => { removeCustomModel(m.id); renderCustomList(); refreshModelDropdowns(); };
+    div.appendChild(del);
+    box.appendChild(div);
+  }
+}
+
+renderCustomList();
+refreshModelDropdowns();
 
 // ---------- Status-Helfer ----------
 function setStatus(msg, isErr = false) {
@@ -172,32 +241,30 @@ $("generateBtn").addEventListener("click", async () => {
   clearVerdict();
 
   try {
-    const key = $("geminiKey").value.trim();
     const wantEnhance = $("enhance").checked;
     const wantVerify = $("verify").checked;
     const maxTries = wantVerify ? clampInt($("maxTries").value, 1, 8, 4) : 1;
 
-    const model = state.imageModel;
-    if (model.needsKey && !key) {
-      throw new Error(`„${model.label}“ braucht einen Gemini-Key. Bitte oben eintragen oder ein gratis Modell wählen.`);
+    const imgCfg = resolveModel(state.imageModelId, "image");
+    const textCfg = resolveModel(state.textModelId, "text");
+    if (imgCfg.needsKey && !imgCfg.apiKey) {
+      throw new Error(`„${imgCfg.label}“ braucht einen API-Key. Bitte eintragen oder ein anderes Modell wählen.`);
     }
 
     // 1) Wunsch in Elemente + starken englischen Bild-Prompt zerlegen
-    setStatus("Analysiere deinen Wunsch …");
+    setStatus(`Analysiere deinen Wunsch (${textCfg.label}) …`);
     const analysis = wantEnhance
-      ? await analyzePrompt(prompt, key, state.visionModel)
+      ? await analyzePrompt(prompt, textCfg)
       : { elements: [], imagePrompt: prompt, source: "off", warning: "" };
 
-    // Diagnose sammeln (wird unten sichtbar gemacht)
     let diag = "";
     if (analysis.source === "fallback" && analysis.warning) {
-      diag = `Prompt-Analyse fiel auf einfache Zerlegung zurück (${analysis.warning})`;
+      diag = `Analyse via ${textCfg.label} fiel auf einfache Zerlegung zurück (${analysis.warning})`;
     }
 
-    // Nur wenn ein ECHTER englischer KI-Prompt vorliegt, Pollinations nicht
-    // umschreiben lassen. Im Fallback (deutscher Rohtext) MUSS enhance=true den
-    // Prompt serverseitig übersetzen – sonst geht z.B. „Herz“ verloren.
+    // Nur bei echtem englischem KI-Prompt Pollinations NICHT umschreiben lassen.
     const strongPrompt = analysis.source === "ai";
+    const polliEnhance = imgCfg.protocol === "pollinations-image" && !strongPrompt;
 
     // 2) Generier-/Prüf-Schleife
     let img = null, verify = null;
@@ -207,16 +274,14 @@ $("generateBtn").addEventListener("click", async () => {
       if (missing.length) p += `. IMPORTANT: the ${missing.join(" and ")} MUST be clearly visible`;
 
       setStatus(maxTries > 1
-        ? `Generiere Bild (Versuch ${attempt}/${maxTries}, ${model.label}) …`
-        : `Generiere Bild (${model.label}) …`);
-      img = model.provider === "gemini"
-        ? await generateGemini(p, key, model.model)
-        : await generatePollinations(p, { enhance: !strongPrompt, model: model.model, token: $("polliKey").value.trim() });
+        ? `Generiere Bild (Versuch ${attempt}/${maxTries}, ${imgCfg.label}) …`
+        : `Generiere Bild (${imgCfg.label}) …`);
+      img = await generateImage(imgCfg, p, { enhance: polliEnhance });
 
       // 3) Gegenprüfung
       if (!wantVerify || !analysis.elements.length) break;
-      setStatus(`Prüfe Ergebnis (Versuch ${attempt}/${maxTries}) …`);
-      verify = await verifyImage(img, analysis.elements, key, state.visionModel);
+      setStatus(`Prüfe Ergebnis (Versuch ${attempt}/${maxTries}, ${textCfg.label}) …`);
+      verify = await verifyImage(img, analysis.elements, textCfg);
       if (verify.error) break;                              // Prüfung nicht möglich
       if (verify.results.every((v) => v.present)) break;    // alles da -> fertig
     }

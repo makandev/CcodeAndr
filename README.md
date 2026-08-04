@@ -54,6 +54,23 @@ web/
 
 Neue Modelle lassen sich zentral in `web/js/models.js` ergänzen – UI und Logik ziehen sich alles von dort.
 
+### Eigene KI hinzufügen (AIO)
+
+Über **„➕ Neue KI hinzufügen"** kannst du in der App beliebige Anbieter eintragen –
+gespeichert nur lokal im Browser. Unterstützte Protokolle:
+
+- **OpenAI-kompatibel (Chat)** – deckt **DeepSeek, OpenRouter, Groq, OpenAI, lokale Server** ab
+  (`POST {basis-url}/chat/completions`). Für Analyse/Übersetzung und – bei Vision-Modellen – Prüfung.
+- **OpenAI-kompatibel (Bild)** – `POST {basis-url}/images/generations` (z. B. DALL·E 3).
+- **Gemini (Text/Vision)** und **Gemini (Bild)**.
+- **Pollinations (Bild)**.
+
+Vorlagen für 1-Klick-Setup: DeepSeek, OpenRouter, Groq, OpenAI, DALL·E.
+
+> Hinweis: **DeepSeek** ist ein Text-Modell – ideal für Prompt-Analyse/Übersetzung,
+> kann aber **keine Bilder erzeugen oder sehen** (also nicht für Bild-Prüfung).
+> Alle Keys bleiben ausschließlich lokal im Browser, nie im Code.
+
 ## Verwendete kostenlose Dienste
 
 | Zweck | Dienst | Key nötig |
